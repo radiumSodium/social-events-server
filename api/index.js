@@ -5,9 +5,16 @@ const dotenv = require("dotenv");
 const { MongoClient, ObjectId } = require("mongodb");
 const createEventsRouter = require("../routes/eventsRoutes.js");
 
+// Load env vars (MONGO_URI will come from Vercel project settings)
 dotenv.config();
 
+// MongoDB connection setup
 const uri = process.env.MONGO_URI;
+
+if (!uri) {
+  console.error("❌ MONGO_URI is not set. Please configure it in Vercel env.");
+}
+
 const client = new MongoClient(uri, {
   serverApi: {
     version: "1",
@@ -16,13 +23,16 @@ const client = new MongoClient(uri, {
   },
 });
 
+// We keep these in module scope so they survive between calls
 let db;
 let eventsCollection;
 let joinedCollection;
 let initialized = false;
 
+// Create express app
 const app = express();
 
+// Basic middlewares
 app.use(
   cors({
     origin: [
@@ -34,14 +44,13 @@ app.use(
     credentials: true,
   })
 );
-
 app.use(express.json());
 
+// Connect to MongoDB and set collections (called once per lambda cold start)
 async function init() {
   if (initialized) return;
 
   await client.connect();
-
   db = client.db("social_events");
   eventsCollection = db.collection("events");
   joinedCollection = db.collection("joinedEvents");
@@ -51,7 +60,7 @@ async function init() {
     res.send("Social Development Events API is running on Vercel.");
   });
 
-  // Test DB
+  // Test DB connection
   app.get("/test-db", async (req, res) => {
     try {
       await db.command({ ping: 1 });
@@ -71,7 +80,7 @@ async function init() {
     }
   });
 
-  // Dev-only seed
+  // Optional dev-only seed route
   app.get("/seed-demo-events", async (req, res) => {
     try {
       const now = new Date();
@@ -156,13 +165,13 @@ async function init() {
     }
   });
 
-  // /events routes from your existing router
+  // Events routes (under /events)
   app.use(
     "/events",
     createEventsRouter(eventsCollection, joinedCollection, db)
   );
 
-  // Join event
+  // Join an event
   app.post("/join-event", async (req, res) => {
     try {
       const { eventId, userEmail } = req.body;
@@ -233,7 +242,7 @@ async function init() {
     }
   });
 
-  // Joined events for user
+  // Joined events for a user
   app.get("/joined", async (req, res) => {
     try {
       const userEmail = req.query.email;
@@ -266,8 +275,10 @@ async function init() {
   });
 
   initialized = true;
+  console.log("✅ API initialized in serverless function");
 }
 
+// Vercel serverless handler
 module.exports = async (req, res) => {
   try {
     await init();

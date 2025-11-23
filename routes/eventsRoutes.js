@@ -5,9 +5,7 @@ const { ObjectId } = require("mongodb");
 function createEventsRouter(eventsCollection, joinedCollection, db) {
   const router = express.Router();
 
-  // ============================================================
-  // CREATE EVENT  ->  POST /events
-  // ============================================================
+  // Create event
   router.post("/", async (req, res) => {
     try {
       const {
@@ -80,9 +78,7 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
     }
   });
 
-  // ============================================================
-  // GET ALL EVENTS  ->  GET /events
-  // ============================================================
+  // All events
   router.get("/", async (req, res) => {
     try {
       const events = await eventsCollection
@@ -105,9 +101,7 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
     }
   });
 
-  // ============================================================
-  // GET UPCOMING EVENTS  ->  GET /events/upcoming
-  // ============================================================
+  // Upcoming events
   router.get("/upcoming", async (req, res) => {
     try {
       const now = new Date();
@@ -134,10 +128,7 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
     }
   });
 
-  // ============================================================
-  // GET EVENTS CREATED BY A USER  ->  GET /events/user?email=...
-  //  ⚠️ IMPORTANT: this route comes BEFORE "/:id"
-  // ============================================================
+  // Events by creator email
   router.get("/user", async (req, res) => {
     try {
       const email = req.query.email;
@@ -168,10 +159,7 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
     }
   });
 
-  // ============================================================
-  // GET SINGLE EVENT DETAILS  ->  GET /events/:id
-  //  This comes AFTER "/user", so /events/user is NOT matched here
-  // ============================================================
+  // Single event details
   router.get("/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -202,15 +190,13 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
       console.error("Get event details error:", err);
       res.status(500).json({
         ok: false,
-        message: "Failed to load event details.",
+        message: "Failed to load event details",
         error: err.message,
       });
     }
   });
 
-  // ============================================================
-  // UPDATE EVENT (ONLY CREATOR)  ->  PUT /events/:id
-  // ============================================================
+  // Update event (only creator)
   router.put("/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -312,7 +298,7 @@ function createEventsRouter(eventsCollection, joinedCollection, db) {
       console.error("Update event error:", err);
       res.status(500).json({
         ok: false,
-        message: "Failed to update event.",
+        message: "Failed to update event",
         error: err.message,
       });
     }

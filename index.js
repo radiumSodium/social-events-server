@@ -1,16 +1,21 @@
+// index.js
 const express = require("express");
-import cors from "cors";
-import dotenv from "dotenv";
-import { MongoClient } from "mongodb";
+const cors = require("cors");
+const dotenv = require("dotenv");
+const { MongoClient } = require("mongodb");
+const createEventsRouter = require("./routes/eventsRoutes");
 
 dotenv.config();
-const app = express();
-app.use(cors());
-app.use(express.json());
 
+const app = express();
 const port = process.env.PORT || 5000;
 const uri = process.env.MONGO_URI;
 
+// Middlewares
+app.use(cors());
+app.use(express.json());
+
+// Mongo client
 const client = new MongoClient(uri, {
   serverApi: {
     version: "1",
@@ -22,31 +27,247 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
+    console.log("✅ Connected to MongoDB");
+
     const db = client.db("social_events");
     const eventsCollection = db.collection("events");
     const joinedCollection = db.collection("joinedEvents");
 
-    app.get("/", (req, res) => {
-      req.send("Social Development Events API is running ....");
+    // ============================================================
+    // DEV-ONLY: Seed demo events  ->  GET /seed-demo-events
+    // ============================================================
+    app.get("/seed-demo-events", async (req, res) => {
+      try {
+        const now = new Date();
+
+        const addDays = (d) => {
+          const date = new Date(now);
+          date.setDate(date.getDate() + d);
+          return date;
+        };
+
+        const demoEvents = [
+          {
+            title: "City Park Cleanup Drive",
+            description:
+              "Join us to clean up the city park and make it a cleaner space for everyone.",
+            eventType: "Cleanup",
+            thumbnail: "https://placehold.co/600x400?text=Park+Cleanup",
+            location: "City Park, Main Gate",
+            eventDate: addDays(3),
+            creatorEmail: "demo1@example.com",
+            createdAt: now,
+          },
+          {
+            title: "Tree Plantation Day",
+            description:
+              "Plant trees in the community area and help us make the city greener.",
+            eventType: "Plantation",
+            thumbnail: "https://placehold.co/600x400?text=Tree+Plantation",
+            location: "Community Ground, Sector 5",
+            eventDate: addDays(7),
+            creatorEmail: "demo2@example.com",
+            createdAt: now,
+          },
+          {
+            title: "Food Donation for Street Children",
+            description:
+              "Distribute food packs and clothes to underprivileged children.",
+            eventType: "Donation",
+            thumbnail: "https://placehold.co/600x400?text=Food+Donation",
+            location: "Central Bus Stand Area",
+            eventDate: addDays(10),
+            creatorEmail: "demo3@example.com",
+            createdAt: now,
+          },
+          {
+            title: "Road Safety Awareness Campaign",
+            description:
+              "Raise awareness about road safety rules among drivers and pedestrians.",
+            eventType: "Awareness",
+            thumbnail: "https://placehold.co/600x400?text=Road+Safety",
+            location: "City Square, Near Traffic Signal",
+            eventDate: addDays(5),
+            creatorEmail: "demo4@example.com",
+            createdAt: now,
+          },
+          {
+            title: "Free Health Checkup Camp",
+            description:
+              "Free basic health checkup and consultation for low-income families.",
+            eventType: "Health Camp",
+            thumbnail: "https://placehold.co/600x400?text=Health+Camp",
+            location: "Community Clinic, Block C",
+            eventDate: addDays(14),
+            creatorEmail: "demo5@example.com",
+            createdAt: now,
+          },
+        ];
+
+        const result = await eventsCollection.insertMany(demoEvents);
+
+        res.json({
+          ok: true,
+          message: "Demo events inserted successfully.",
+          insertedCount: result.insertedCount,
+        });
+      } catch (err) {
+        console.error("Seed demo events error:", err);
+        res.status(500).json({
+          ok: false,
+          message: "Failed to seed demo events",
+          error: err.message,
+        });
+      }
     });
 
-    // ---- Events CRUD & query routes will go here ----
-    // POST /events (create)
-    // GET /events (upcoming + filter + search)
-    // GET /events/:id (details)
-    // GET /events/user/:email (manage events)
-    // PUT /events/:id (update)
-    // DELETE /events/:id (optional)
+    // Root & test DB
+    app.get("/", (req, res) => {
+      res.send("Social Development Events API is running ....");
+    });
 
-    // ---- Joined events ----
-    // POST /join (user joins event)
-    // GET /joined?email= (joined events list sorted by date)
+    app.get("/test-db", async (req, res) => {
+      try {
+        await db.command({ ping: 1 });
+        const count = await eventsCollection.estimatedDocumentCount();
 
+        res.json({
+          ok: true,
+          message: "MongoDB is working",
+          totalEvents: count,
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({
+          ok: false,
+          error: err.message,
+        });
+      }
+    });
+
+    // ============================================================
+    // EVENTS ROUTES (mounted at /events)
+    // ============================================================
+    app.use(
+      "/events",
+      createEventsRouter(eventsCollection, joinedCollection, db)
+    );
+
+    // ============================================================
+    // JOIN EVENT -> POST /join-event
+    // ============================================================
+    app.post("/join-event", async (req, res) => {
+      try {
+        const { eventId, userEmail } = req.body;
+
+        if (!eventId || !userEmail) {
+          return res.status(400).json({
+            ok: false,
+            message: "eventId and userEmail are required.",
+          });
+        }
+
+        if (!ObjectId.isValid(eventId)) {
+          return res.status(400).json({
+            ok: false,
+            message: "Invalid eventId.",
+          });
+        }
+
+        const event = await eventsCollection.findOne({
+          _id: new ObjectId(eventId),
+        });
+
+        if (!event) {
+          return res.status(404).json({
+            ok: false,
+            message: "Event not found.",
+          });
+        }
+
+        const existing = await joinedCollection.findOne({
+          eventId: event._id,
+          userEmail,
+        });
+
+        if (existing) {
+          return res.status(400).json({
+            ok: false,
+            message: "You have already joined this event.",
+          });
+        }
+
+        const joinDoc = {
+          eventId: event._id,
+          userEmail,
+          joinedAt: new Date(),
+          eventTitle: event.title,
+          eventType: event.eventType,
+          thumbnail: event.thumbnail,
+          location: event.location,
+          eventDate: event.eventDate,
+          creatorEmail: event.creatorEmail,
+        };
+
+        const result = await joinedCollection.insertOne(joinDoc);
+
+        res.status(201).json({
+          ok: true,
+          message: "You have successfully joined this event.",
+          joinId: result.insertedId,
+        });
+      } catch (err) {
+        console.error("Join event error:", err);
+        res.status(500).json({
+          ok: false,
+          message: "Failed to join event.",
+          error: err.message,
+        });
+      }
+    });
+
+    // ============================================================
+    // JOINED EVENTS FOR USER -> GET /joined?email=...
+    // ============================================================
+    app.get("/joined", async (req, res) => {
+      try {
+        const userEmail = req.query.email;
+
+        if (!userEmail) {
+          return res.status(400).json({
+            ok: false,
+            message: "User email is required.",
+          });
+        }
+
+        const joinedEvents = await joinedCollection
+          .find({ userEmail })
+          .sort({ eventDate: 1 })
+          .toArray();
+
+        res.json({
+          ok: true,
+          count: joinedEvents.length,
+          joinedEvents,
+        });
+      } catch (err) {
+        console.error("Get joined events error:", err);
+        res.status(500).json({
+          ok: false,
+          message: "Failed to load joined events",
+          error: err.message,
+        });
+      }
+    });
+
+    // ============================================================
+    // START SERVER
+    // ============================================================
     app.listen(port, () => {
-      console.log(`Server is running on port : ${port}`);
+      console.log(`🚀 Server running on port: ${port}`);
     });
   } catch (err) {
-    console.error(err);
+    console.error("❌ MongoDB connection error:", err);
   }
 }
 
